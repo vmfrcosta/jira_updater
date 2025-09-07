@@ -53,6 +53,7 @@ class ChangelogPopulator
     private
   
     def populate_entered_timestamps
+        pp "populate_entered_timestamps"
       # Get all status transitions from changelog
       status_transitions = get_status_transitions
   
@@ -89,6 +90,8 @@ class ChangelogPopulator
         end
       end
   
+      pp transitions
+
       transitions
     end
   
@@ -113,14 +116,15 @@ class ChangelogPopulator
       transitions
     end
   
-    def find_oldest_entries_by_status(transitions)
+        def find_oldest_entries_by_status(transitions)
       oldest_entries = {}
-  
+
       transitions.each do |transition|
         to_status  = transition[:to_status]
-        column_name = STATUS_TO_COLUMN_MAP[to_status]
+        # Find matching status in map (case-insensitive)
+        column_name = find_matching_status_column(to_status)
         next unless column_name
-  
+
         if !oldest_entries[column_name] || transition[:timestamp] < oldest_entries[column_name][:timestamp]
           oldest_entries[column_name] = {
             timestamp:    transition[:timestamp],
@@ -130,13 +134,22 @@ class ChangelogPopulator
           }
         end
       end
-  
+
+      pp oldest_entries
+
       oldest_entries
+    end
+
+    def find_matching_status_column(status_name)
+      STATUS_TO_COLUMN_MAP.each do |mapped_status, column|
+        return column if status_name.downcase == mapped_status.downcase
+      end
+      nil
     end
   
     def find_first_status_transition(transitions, target_status)
       transitions
-        .select { |t| t[:to_status] == target_status }
+        .select { |t| t[:to_status].downcase == target_status.downcase }
         .min_by { |t| t[:timestamp] }
     end
   
@@ -144,7 +157,9 @@ class ChangelogPopulator
       return if oldest_entries.blank?
   
       updates = {}
+      ap oldest_entries
       oldest_entries.each { |column_name, entry| updates[column_name] = entry[:timestamp] }
+
   
       if updates.any?
         @jira_issue.update_columns(updates)

@@ -76,6 +76,58 @@ class JiraUpdater
     end
   end
 
+  # Update issues that have been updated in the last N days
+  def update_recent_issues_in_jira(days = 14)
+    cutoff_date = days.days.ago
+    
+    # Find issues that have been updated in the last N days
+    recent_issues = JiraIssue.where(updated_at: cutoff_date..Time.current)
+    
+    # Filter to only include issues that have timestamp, reviewer, or tester data
+    issues_with_data = recent_issues.select do |issue|
+      # Check if issue has any timestamp data
+      has_timestamps = [
+        issue.entered_requirements_at,
+        issue.entered_discovery_at,
+        issue.entered_ideation_at,
+        issue.entered_validation_at,
+        issue.entered_refinement_at,
+        issue.entered_ready_for_dev_at,
+        issue.entered_ready_for_review_at,
+        issue.entered_ready_for_test_at,
+        issue.entered_ready_for_deploy_at,
+        issue.entered_developing_at,
+        issue.entered_reviewing_at,
+        issue.entered_testing_at,
+        issue.entered_deployed_at,
+        issue.entered_wrapup_at,
+        issue.entered_done_at
+      ].any?(&:present?)
+      
+      # Check if issue has reviewer or tester data
+      has_reviewer_tester = issue.reviewer.present? || issue.tester.present?
+      
+      has_timestamps || has_reviewer_tester
+    end
+
+    total_issues = issues_with_data.count
+    Rails.logger.info("[JiraUpdater] Found #{total_issues} issues updated in the last #{days} days with timestamp/reviewer/tester data")
+    
+    updated_count = 0
+    issues_with_data.each do |issue|
+      Rails.logger.info("[JiraUpdater] Updating recent issue #{issue.key} (updated at: #{issue.updated_at})")
+      begin
+        update_issue_in_jira(issue)
+        updated_count += 1
+      rescue => e
+        Rails.logger.error("[JiraUpdater] Failed to update recent issue #{issue.key}: #{e.message}")
+      end
+    end
+    
+    Rails.logger.info("[JiraUpdater] Successfully updated #{updated_count} out of #{total_issues} recent issues")
+    updated_count
+  end
+
   private
 
   def build_update_fields(jira_issue)
@@ -206,5 +258,10 @@ class JiraUpdater
   # Class method to update a specific issue
   def self.update_issue(jira_issue)
     new.update_issue_in_jira(jira_issue)
+  end
+
+  # Class method to update issues that have been updated in the last N days
+  def self.update_recent_issues(days = 14)
+    new.update_recent_issues_in_jira(days)
   end
 end

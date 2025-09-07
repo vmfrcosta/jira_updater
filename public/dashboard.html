@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Agile Dashboard</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    .metric-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .metric-value {
+      font-size: 2.5rem;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .metric-label {
+      font-size: 0.9rem;
+      opacity: 0.9;
+    }
+    .chart-container {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .date-filter {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .loading {
+      text-align: center;
+      padding: 50px;
+      font-size: 1.2rem;
+      color: #666;
+    }
+    .spin {
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="container-fluid py-4">
+    <div class="row">
+      <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+          <h1>Agile Dashboard</h1>
+          <div>
+            <a href="/stories" class="btn btn-outline-info me-2">
+              <i class="bi bi-journal-text"></i> Stories
+            </a>
+          </div>
+        </div>
+        
+        <div id="loading" class="loading">
+          <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="mt-3">Loading dashboard data...</p>
+        </div>
+        
+        <div id="dashboard" style="display: none;">
+          <!-- Date Filter -->
+          <div class="date-filter">
+            <form id="dateForm" class="row g-3">
+              <div class="col-md-4">
+                <label for="start_date" class="form-label">Start Date</label>
+                <input type="date" class="form-control" id="start_date" name="start_date">
+              </div>
+              <div class="col-md-4">
+                <label for="end_date" class="form-label">End Date</label>
+                <input type="date" class="form-control" id="end_date" name="end_date">
+              </div>
+              <div class="col-md-4 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2">Update</button>
+                <button type="button" class="btn btn-warning me-2" onclick="showIssuesModal()" style="display: none;">
+            <i class="bi bi-arrow-clockwise"></i> Sync & Refresh
+          </button>
+                <button type="button" class="btn btn-success me-2" onclick="exportData()">Export Metrics CSV</button>
+                <button type="button" class="btn btn-info" onclick="exportRawData()">Export Raw Data CSV</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Overall Metrics -->
+          <div class="row mb-4" id="overallMetrics">
+            <!-- Metrics will be populated by JavaScript -->
+          </div>
+
+          <!-- Charts Row 1 -->
+          <div class="row">
+            <div class="col-md-6">
+              <div class="chart-container">
+                <h5>Cycle Time vs Lead Time</h5>
+                <canvas id="cycleLeadChart"></canvas>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="chart-container">
+                <h5>Throughput by Week</h5>
+                <canvas id="throughputChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts Row 2 - Weekly Assignee Charts -->
+          <div class="row">
+            <div class="col-md-6">
+              <div class="chart-container">
+                <h5>Weekly Effort by Assignee (Points)</h5>
+                <canvas id="weeklyEffortChart"></canvas>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="chart-container">
+                <h5>Weekly Bugs Resolved by Assignee</h5>
+                <canvas id="weeklyBugsChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts Row 3 - Weekly Reviewer and Tester Charts -->
+          <div class="row">
+            <div class="col-md-6">
+              <div class="chart-container">
+                <h5>Weekly Reviews by Reviewer</h5>
+                <canvas id="weeklyReviewsChart"></canvas>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="chart-container">
+                <h5>Weekly Tests by Tester</h5>
+                <canvas id="weeklyTestsChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Weekly Data Table -->
+          <div class="row">
+            <div class="col-12">
+              <div class="chart-container">
+                <h5>Weekly Metrics</h5>
+                <div class="table-responsive">
+                  <table class="table table-striped" id="weeklyTable">
+                    <thead>
+                      <tr>
+                        <th>Week</th>
+                        <th>Cycle Time</th>
+                        <th>Lead Time</th>
+                        <th>Throughput</th>
+                        <th>Total Issues</th>
+                        <th>Total Effort</th>
+                        <th>Effort by Assignee</th>
+                        <th>Bugs Solved</th>
+                        <th>Bugs by Assignee</th>
+                        <th>Reviews by Reviewer</th>
+                        <th>Tests by Tester</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <!-- Data will be populated by JavaScript -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <script>
+    let dashboardData = null;
+    let charts = {};
+
+    // Load dashboard data
+    async function loadDashboard(startDate = null, endDate = null) {
+      try {
+        let url = '/dashboard/json';
+        if (startDate && endDate) {
+          url += `?start_date=${startDate}&end_date=${endDate}`;
+        }
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        dashboardData = await response.json();
+        updateDashboard();
+      } catch (error) {
+        console.error('Error loading dashboard:', error);
+        document.getElementById('loading').innerHTML = `
+          <div class="alert alert-danger">
+            <strong>Error loading dashboard:</strong> ${error.message}
+          </div>
+        `;
+      }
+    }
+
+    // Update dashboard display
+    function updateDashboard() {
+      if (!dashboardData) return;
+
+      // Set date inputs
+      document.getElementById('start_date').value = dashboardData.start_date.split('T')[0];
+      document.getElementById('end_date').value = dashboardData.end_date.split('T')[0];
+
+      // Update overall metrics
+      updateOverallMetrics();
+      
+      // Update weekly table
+      updateWeeklyTable();
+      
+      // Update charts
+      updateCharts();
+      
+      // Show dashboard
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+    }
+
+    // Update overall metrics cards
+    function updateOverallMetrics() {
+      const metrics = dashboardData.overall_metrics;
+      const container = document.getElementById('overallMetrics');
+      
+      container.innerHTML = `
+        <div class="col-md-3">
+          <div class="metric-card">
+            <div class="metric-value">${metrics.cycle_time}</div>
+            <div class="metric-label">Average Cycle Time (days)</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="metric-card">
+            <div class="metric-value">${metrics.lead_time}</div>
+            <div class="metric-label">Average Lead Time (days)</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="metric-card">
+            <div class="metric-value">${metrics.throughput}</div>
+            <div class="metric-label">Total Throughput</div>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="metric-card">
+            <div class="metric-value">${metrics.total_issues}</div>
+            <div class="metric-label">Total Issues</div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Update weekly metrics table
+    function updateWeeklyTable() {
+      const tbody = document.querySelector('#weeklyTable tbody');
+      tbody.innerHTML = '';
+      
+      // Convert points to hours (1 point = 2.3 hours)
+      const pointsToHours = (points) => (points * 2.3).toFixed(1);
+      
+      dashboardData.weekly_metrics.forEach(week => {
+        // Format effort by assignee in points (only tasks and subtasks)
+        const effortByAssignee = Object.entries(week.metrics.effort_by_assignee)
+          .filter(([assignee, effort]) => effort > 0) // Only show assignees with actual effort
+          .map(([assignee, effort]) => `${assignee}: ${effort} pts`)
+          .join(', ');
+        
+        // Format bugs by assignee
+        const bugsByAssignee = Object.entries(week.metrics.bugs_by_assignee)
+          .filter(([assignee, bugs]) => bugs > 0) // Only show assignees with actual bugs
+          .map(([assignee, bugs]) => `${assignee}: ${bugs} bugs`)
+          .join(', ');
+        
+        // Format reviews by reviewer
+        const reviewsByReviewer = Object.entries(week.metrics.reviews_by_reviewer || {})
+          .filter(([reviewer, reviews]) => reviews > 0) // Only show reviewers with actual reviews
+          .map(([reviewer, reviews]) => `${reviewer}: ${reviews} reviews`)
+          .join(', ');
+        
+        // Format tests by tester
+        const testsByTester = Object.entries(week.metrics.tests_by_tester || {})
+          .filter(([tester, tests]) => tests > 0) // Only show testers with actual tests
+          .map(([tester, tests]) => `${tester}: ${tests} tests`)
+          .join(', ');
+        
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${week.week_label}</td>
+          <td>${week.metrics.cycle_time} days</td>
+          <td>${week.metrics.lead_time} days</td>
+          <td>${week.metrics.throughput}</td>
+          <td>${week.metrics.total_issues}</td>
+          <td>${week.metrics.total_effort} pts</td>
+          <td>${effortByAssignee || 'None'}</td>
+          <td>${week.metrics.total_bugs_solved}</td>
+          <td>${bugsByAssignee || 'None'}</td>
+          <td>${reviewsByReviewer || 'None'}</td>
+          <td>${testsByTester || 'None'}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    // Create consistent color mapping for assignees
+    function createAssigneeColorMap() {
+      const allAssignees = new Set();
+      
+      // Collect all assignees from both effort and bugs data
+      dashboardData.weekly_metrics.forEach(week => {
+        Object.entries(week.metrics.effort_by_assignee).forEach(([assignee, effort]) => {
+          if (effort > 0) allAssignees.add(assignee);
+        });
+        Object.entries(week.metrics.bugs_by_assignee).forEach(([assignee, bugs]) => {
+          if (bugs > 0) allAssignees.add(assignee);
+        });
+      });
+      
+      const assignees = Array.from(allAssignees);
+      const colors = [
+        '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', 
+        '#9966FF', '#FF9F40', '#FF6384', '#36A2EB'
+      ];
+      
+      const colorMap = {};
+      assignees.forEach((assignee, index) => {
+        colorMap[assignee] = colors[index % colors.length];
+      });
+      
+      return colorMap;
+    }
+
+    // Update charts
+    function updateCharts() {
+      // Destroy existing charts
+      Object.values(charts).forEach(chart => {
+        if (chart) chart.destroy();
+      });
+      charts = {};
+
+      // Create consistent color mapping
+      const assigneeColorMap = createAssigneeColorMap();
+
+      // Cycle Time vs Lead Time Chart
+      const cycleLeadCtx = document.getElementById('cycleLeadChart').getContext('2d');
+      charts.cycleLead = new Chart(cycleLeadCtx, {
+        type: 'line',
+        data: {
+          labels: dashboardData.weekly_metrics.map(w => w.week_label),
+          datasets: [{
+            label: 'Cycle Time',
+            data: dashboardData.weekly_metrics.map(w => w.metrics.cycle_time),
+            borderColor: 'rgb(75, 192, 192)',
+            backgroundColor: 'rgba(75, 192, 192, 0.1)',
+            borderWidth: 3,
+            tension: 0.1,
+            fill: false,
+            pointRadius: 4,
+            pointHoverRadius: 6
+          }, {
+            label: 'Lead Time',
+            data: dashboardData.weekly_metrics.map(w => w.metrics.lead_time),
+            borderColor: 'rgb(255, 99, 132)',
+            backgroundColor: 'rgba(255, 99, 132, 0.1)',
+            borderWidth: 3,
+            tension: 0.1,
+            fill: false,
+            pointRadius: 4,
+            pointHoverRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          interaction: {
+            mode: 'index',
+            intersect: false,
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Days'
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              position: 'top'
+            }
+          }
+        }
+      });
+
+      // Throughput Chart
+      const throughputCtx = document.getElementById('throughputChart').getContext('2d');
+      charts.throughput = new Chart(throughputCtx, {
+        type: 'bar',
+        data: {
+          labels: dashboardData.weekly_metrics.map(w => w.week_label),
+          datasets: [{
+            label: 'Throughput',
+            data: dashboardData.weekly_metrics.map(w => w.metrics.throughput),
+            backgroundColor: 'rgba(54, 162, 235, 0.8)',
+            borderColor: 'rgb(54, 162, 235)',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Issues Completed'
+              }
+            }
+          }
+        }
+      });
+
+
+
+      // Weekly Effort by Assignee Chart - Only Tasks and Subtasks
+      const weeklyEffortCtx = document.getElementById('weeklyEffortChart').getContext('2d');
+      
+      // Get all unique assignees from weekly data (only those with task/subtask effort)
+      const allAssignees = new Set();
+      dashboardData.weekly_metrics.forEach(week => {
+        Object.entries(week.metrics.effort_by_assignee).forEach(([assignee, effort]) => {
+          // Only include assignees who have actual effort (tasks/subtasks)
+          if (effort > 0) {
+            allAssignees.add(assignee);
+          }
+        });
+      });
+      
+      const assignees = Array.from(allAssignees);
+      
+      const datasets = assignees.map((assignee, index) => ({
+        label: assignee,
+        data: dashboardData.weekly_metrics.map(week => 
+          week.metrics.effort_by_assignee[assignee] || 0
+        ),
+        borderColor: assigneeColorMap[assignee],
+        backgroundColor: assigneeColorMap[assignee] + '15',
+        borderWidth: 3,
+        tension: 0.1,
+        fill: false,
+        pointRadius: 5,
+        pointHoverRadius: 8,
+        pointBackgroundColor: assigneeColorMap[assignee],
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 2
+      }));
+      
+      charts.weeklyEffort = new Chart(weeklyEffortCtx, {
+        type: 'line',
+        data: {
+          labels: dashboardData.weekly_metrics.map(w => w.week_label),
+          datasets: datasets
+        },
+        options: {
+          responsive: true,
+          interaction: {
+            mode: 'index',
+            intersect: false,
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Points'
+              },
+              grid: {
+                color: 'rgba(0,0,0,0.1)'
+              }
+            },
+            x: {
+              grid: {
+                color: 'rgba(0,0,0,0.1)'
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                usePointStyle: true,
+                padding: 20
+              }
+            }
+          }
+        }
+      });
+
+      // Weekly Bugs by Assignee Chart
+      const weeklyBugsCtx = document.getElementById('weeklyBugsChart').getContext('2d');
+      
+      // Get all unique assignees from weekly bugs data
+      const allBugAssignees = new Set();
+      dashboardData.weekly_metrics.forEach(week => {
+        Object.entries(week.metrics.bugs_by_assignee).forEach(([assignee, bugs]) => {
+          // Only include assignees who have actually solved bugs
+          if (bugs > 0) {
+            allBugAssignees.add(assignee);
+          }
+        });
+      });
+      
+      const bugAssignees = Array.from(allBugAssignees);
+      
+      const bugDatasets = bugAssignees.map((assignee, index) => ({
+        label: assignee,
+        data: dashboardData.weekly_metrics.map(week => 
+          week.metrics.bugs_by_assignee[assignee] || 0
+        ),
+        borderColor: assigneeColorMap[assignee],
+        backgroundColor: assigneeColorMap[assignee] + '15',
+        borderWidth: 3,
+        tension: 0.1,
+        fill: false,
+        pointRadius: 5,
+        pointHoverRadius: 8,
+        pointBackgroundColor: assigneeColorMap[assignee],
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 2
+      }));
+      
+      charts.weeklyBugs = new Chart(weeklyBugsCtx, {
+        type: 'line',
+        data: {
+          labels: dashboardData.weekly_metrics.map(w => w.week_label),
+          datasets: bugDatasets
+        },
+        options: {
+          responsive: true,
+          interaction: {
+            mode: 'index',
+            intersect: false,
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Bugs Solved'
+              },
+              grid: {
+                color: 'rgba(0,0,0,0.1)'
+              }
+            },
+            x: {
+              grid: {
+                color: 'rgba(0,0,0,0.1)'
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                usePointStyle: true,
+                padding: 20
+              }
+            }
+          }
+        }
+      });
+
+      // Weekly Reviews by Reviewer Chart
+      const weeklyReviewsCtx = document.getElementById('weeklyReviewsChart').getContext('2d');
+      
+      // Get all unique reviewers from weekly data
+      const allReviewers = new Set();
+      dashboardData.weekly_metrics.forEach(week => {
+        Object.entries(week.metrics.reviews_by_reviewer || {}).forEach(([reviewer, reviews]) => {
+          if (reviews > 0) {
+            allReviewers.add(reviewer);
+          }
+        });
+      });
+      
+      const reviewers = Array.from(allReviewers);
+      
+      const reviewDatasets = reviewers.map((reviewer, index) => ({
+        label: reviewer,
+        data: dashboardData.weekly_metrics.map(week => 
+          (week.metrics.reviews_by_reviewer || {})[reviewer] || 0
+        ),
+        borderColor: assigneeColorMap[reviewer] || `hsl(${index * 60}, 70%, 50%)`,
+        backgroundColor: (assigneeColorMap[reviewer] || `hsl(${index * 60}, 70%, 50%)`) + '15',
+        borderWidth: 3,
+        tension: 0.1,
+        fill: false,
+        pointRadius: 5,
+        pointHoverRadius: 8,
+        pointBackgroundColor: assigneeColorMap[reviewer] || `hsl(${index * 60}, 70%, 50%)`,
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 2
+      }));
+      
+      charts.weeklyReviews = new Chart(weeklyReviewsCtx, {
+        type: 'line',
+        data: {
+          labels: dashboardData.weekly_metrics.map(w => w.week_label),
+          datasets: reviewDatasets
+        },
+        options: {
+          responsive: true,
+          interaction: {
+            mode: 'index',
+            intersect: false,
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Reviews Completed'
+              },
+              grid: {
+                color: 'rgba(0,0,0,0.1)'
+              }
+            },
+            x: {
+              grid: {
+                color: 'rgba(0,0,0,0.1)'
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                usePointStyle: true,
+                padding: 20
+              }
+            }
+          }
+        }
+      });
+
+      // Weekly Tests by Tester Chart
+      const weeklyTestsCtx = document.getElementById('weeklyTestsChart').getContext('2d');
+      
+      // Get all unique testers from weekly data
+      const allTesters = new Set();
+      dashboardData.weekly_metrics.forEach(week => {
+        Object.entries(week.metrics.tests_by_tester || {}).forEach(([tester, tests]) => {
+          if (tests > 0) {
+            allTesters.add(tester);
+          }
+        });
+      });
+      
+      const testers = Array.from(allTesters);
+      
+      const testDatasets = testers.map((tester, index) => ({
+        label: tester,
+        data: dashboardData.weekly_metrics.map(week => 
+          (week.metrics.tests_by_tester || {})[tester] || 0
+        ),
+        borderColor: assigneeColorMap[tester] || `hsl(${index * 60 + 30}, 70%, 50%)`,
+        backgroundColor: (assigneeColorMap[tester] || `hsl(${index * 60 + 30}, 70%, 50%)`) + '15',
+        borderWidth: 3,
+        tension: 0.1,
+        fill: false,
+        pointRadius: 5,
+        pointHoverRadius: 8,
+        pointBackgroundColor: assigneeColorMap[tester] || `hsl(${index * 60 + 30}, 70%, 50%)`,
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 2
+      }));
+      
+      charts.weeklyTests = new Chart(weeklyTestsCtx, {
+        type: 'line',
+        data: {
+          labels: dashboardData.weekly_metrics.map(w => w.week_label),
+          datasets: testDatasets
+        },
+        options: {
+          responsive: true,
+          interaction: {
+            mode: 'index',
+            intersect: false,
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Tests Completed'
+              },
+              grid: {
+                color: 'rgba(0,0,0,0.1)'
+              }
+            },
+            x: {
+              grid: {
+                color: 'rgba(0,0,0,0.1)'
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                usePointStyle: true,
+                padding: 20
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Export data to CSV
+    function exportData() {
+      const startDate = document.getElementById('start_date').value;
+      const endDate = document.getElementById('end_date').value;
+      
+      // Show loading state
+      const button = event.target;
+      const originalText = button.innerHTML;
+      button.innerHTML = '<i class="bi bi-hourglass-split"></i> Exporting...';
+      button.disabled = true;
+      
+      // Build URL with date parameters
+      let url = '/dashboard/export';
+      const params = new URLSearchParams();
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      if (params.toString()) url += '?' + params.toString();
+      
+      fetch(url)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.blob();
+        })
+        .then(blob => {
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `agile_metrics_${startDate || 'all'}_${endDate || 'all'}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        })
+        .catch(error => {
+          console.error('Error exporting metrics data:', error);
+          alert('Error exporting metrics data. Please try again.');
+        })
+        .finally(() => {
+          // Restore button state
+          button.innerHTML = originalText;
+          button.disabled = false;
+        });
+    }
+
+
+
+    // Export raw Jira issue data to CSV
+    function exportRawData() {
+      const startDate = document.getElementById('start_date').value;
+      const endDate = document.getElementById('end_date').value;
+      
+      // Show loading state
+      const button = event.target;
+      const originalText = button.innerHTML;
+      button.innerHTML = '<i class="bi bi-hourglass-split"></i> Exporting...';
+      button.disabled = true;
+      
+      // Build URL with date parameters
+      let url = '/dashboard/export_raw_data';
+      const params = new URLSearchParams();
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      if (params.toString()) url += '?' + params.toString();
+      
+      fetch(url)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.blob();
+        })
+        .then(blob => {
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `jira_issues_raw_${startDate || 'all'}_${endDate || 'all'}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        })
+        .catch(error => {
+          console.error('Error exporting raw data:', error);
+          alert('Error exporting raw data. Please try again.');
+        })
+        .finally(() => {
+          // Restore button state
+          button.innerHTML = originalText;
+          button.disabled = false;
+        });
+    }
+
+    // Handle date form submission
+    document.getElementById('dateForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const startDate = document.getElementById('start_date').value;
+      const endDate = document.getElementById('end_date').value;
+      
+      if (startDate && endDate) {
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('dashboard').style.display = 'none';
+        loadDashboard(startDate, endDate);
+      }
+    });
+
+    // Load dashboard on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      loadDashboard();
+      checkIssuesToReview();
+    });
+
+    // Check if there are issues to review and show/hide button accordingly
+    function checkIssuesToReview() {
+      const issuesButton = document.querySelector('button[onclick="showIssuesModal()"]');
+      if (issuesButton) {
+        // Show loading state
+        issuesButton.style.display = 'inline-block';
+        issuesButton.innerHTML = '<i class="bi bi-hourglass-split"></i> Checking...';
+        issuesButton.disabled = true;
+      }
+      
+      fetch('/dashboard/issues_to_review')
+        .then(response => response.json())
+        .then(data => {
+          if (issuesButton) {
+            if (data.issues && data.issues.length > 0) {
+              issuesButton.style.display = 'inline-block';
+              issuesButton.innerHTML = `<i class="bi bi-arrow-clockwise"></i> Sync & Refresh <span class="badge bg-warning ms-1">${data.issues.length}</span>`;
+              issuesButton.disabled = false;
+            } else {
+              issuesButton.style.display = 'none';
+            }
+          }
+        })
+        .catch(error => {
+          console.error('Error checking issues to review:', error);
+          // Hide button on error to be safe
+          if (issuesButton) {
+            issuesButton.style.display = 'none';
+          }
+        });
+    }
+
+    // Show issues modal
+    function showIssuesModal() {
+      // Show loading in modal
+      document.getElementById('issuesModalBody').innerHTML = `
+        <div class="text-center">
+          <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="mt-3">Loading issues...</p>
+        </div>
+      `;
+      
+      // Show modal
+      const modal = new bootstrap.Modal(document.getElementById('issuesModal'));
+      modal.show();
+      
+      // Fetch issues data
+      fetchIssuesData();
+    }
+
+    // Refresh issues modal
+    function refreshIssuesModal() {
+      // Disable refresh button and show loading state
+      const refreshBtn = document.querySelector('#issuesModal .btn-outline-primary');
+      refreshBtn.disabled = true;
+      refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise spin"></i> Syncing...';
+      
+      // Show loading in modal
+      document.getElementById('issuesModalBody').innerHTML = `
+        <div class="text-center">
+          <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="mt-3">Syncing with Jira...</p>
+          <small class="text-muted">This may take a few moments</small>
+        </div>
+      `;
+      
+      // First sync with Jira, then fetch updated issues data
+      fetch('/jira/sync', { 
+        method: 'POST',
+        signal: AbortSignal.timeout(300000) // 5 minute timeout
+      })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`Sync failed: ${response.status} ${response.statusText}`);
+          }
+          return response.json();
+        })
+        .then(syncResult => {
+          // Update loading message
+          document.getElementById('issuesModalBody').innerHTML = `
+            <div class="text-center">
+              <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+              <p class="mt-3">Loading updated issues...</p>
+              <small class="text-muted">${syncResult.message}</small>
+            </div>
+          `;
+          
+          // Now fetch the updated issues data
+          return fetchIssuesData();
+        })
+        .catch(error => {
+          console.error('Error during sync:', error);
+          let errorMessage = error.message;
+          
+          if (error.name === 'TimeoutError') {
+            errorMessage = 'Sync timed out after 5 minutes. The sync may still be running in the background.';
+          }
+          
+          document.getElementById('issuesModalBody').innerHTML = `
+            <div class="alert alert-warning">
+              <h5>Sync Warning</h5>
+              <p>${errorMessage}</p>
+              <p>Loading issues from local database...</p>
+            </div>
+          `;
+          
+          // Still try to fetch local data even if sync failed
+          return fetchIssuesData();
+        })
+        .finally(() => {
+          // Re-enable refresh button
+          refreshBtn.disabled = false;
+          refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Sync & Refresh';
+          
+          // Update the main dashboard button state after sync
+          setTimeout(() => {
+            checkIssuesToReview();
+          }, 2000); // Wait 2 seconds for sync to complete
+        });
+    }
+
+    // Fetch issues data (shared function)
+    function fetchIssuesData() {
+      return fetch('/dashboard/issues_to_review')
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          return response.json();
+        })
+        .then(data => {
+          if (!data || !data.issues) {
+            throw new Error('Invalid response format: missing issues data');
+          }
+          displayIssues(data.issues, data.jira_base_url);
+        })
+        .catch(error => {
+          console.error('Error fetching issues:', error);
+          document.getElementById('issuesModalBody').innerHTML = `
+            <div class="alert alert-danger">
+              <h5>Error loading issues</h5>
+              <p>${error.message}</p>
+              <small class="text-muted">Please try again or contact support if the problem persists.</small>
+            </div>
+          `;
+          throw error; // Re-throw to allow .finally() to work
+        });
+    }
+
+    // Display issues in modal
+    function displayIssues(issues, jiraBaseUrl) {
+      if (!Array.isArray(issues)) {
+        console.error('Issues is not an array:', issues);
+        document.getElementById('issuesModalBody').innerHTML = `
+          <div class="alert alert-danger">
+            <h5>Data Format Error</h5>
+            <p>Expected array of issues but received: ${typeof issues}</p>
+          </div>
+        `;
+        return;
+      }
+      
+      if (issues.length === 0) {
+        document.getElementById('issuesModalBody').innerHTML = `
+          <div class="alert alert-success">
+            <h5>Great! No issues found.</h5>
+            <p>All tasks and subtasks in developing or beyond status have assignees and points assigned.</p>
+          </div>
+        `;
+        return;
+      }
+
+      let html = `
+        <div class="table-responsive">
+          <table class="table table-striped">
+            <thead>
+              <tr>
+                <th>Issue Key</th>
+                <th>Summary</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Assignee</th>
+                <th>Points</th>
+                <th>Missing</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      issues.forEach(issue => {
+        const missingItems = [];
+        if (!issue.assignee) missingItems.push('Assignee');
+        if (!issue.story_points) missingItems.push('Points');
+        
+        html += `
+          <tr>
+            <td><a href="${jiraBaseUrl}/browse/${issue.issue_key}" target="_blank" class="text-decoration-none text-primary fw-bold"><strong>${issue.issue_key}</strong></a></td>
+            <td>${issue.summary}</td>
+            <td><span class="badge bg-secondary">${issue.issue_type}</span></td>
+            <td><span class="badge bg-info">${issue.status}</span></td>
+            <td>${issue.assignee || '<span class="text-danger">Unassigned</span>'}</td>
+            <td>${issue.story_points || '<span class="text-danger">No points</span>'}</td>
+            <td><span class="badge bg-warning">${missingItems.join(', ')}</span></td>
+          </tr>
+        `;
+      });
+
+      html += `
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-3">
+          <small class="text-muted">
+            Found ${issues.length} issue(s) that need attention. Last updated: ${new Date().toLocaleTimeString()}
+          </small>
+        </div>
+      `;
+
+      document.getElementById('issuesModalBody').innerHTML = html;
+    }
+  </script>
+
+  <!-- Issues Modal -->
+  <div class="modal fade" id="issuesModal" tabindex="-1" aria-labelledby="issuesModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="issuesModalLabel">Issues Requiring Attention</h5>
+          <button type="button" class="btn btn-outline-primary btn-sm me-2 ms-3" onclick="refreshIssuesModal()">
+            <i class="bi bi-arrow-clockwise"></i> Sync & Refresh
+          </button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="issuesModalBody">
+          <!-- Content will be loaded here -->
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

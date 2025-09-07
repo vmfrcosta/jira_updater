@@ -40,6 +40,7 @@ gem "faraday_middleware"
 gem "dotenv-rails"
 gem "oj"
 gem "csv"
+gem "awesome_print"
 
 
 group :development, :test do

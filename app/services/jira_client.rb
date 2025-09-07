@@ -28,6 +28,10 @@ class JiraClient
       labels
       created
       duedate
+      parent
+      assignee
+      sprint
+      customfield_10310
     ]
 
     # inclui campos de data (start/end) se definidos
@@ -105,6 +109,21 @@ class JiraClient
 
     res = perform(req)
     res.code == "204" # Jira returns 204 No Content on successful update
+  end
+
+  # -------------------------
+  # Deleta uma issue
+  # -------------------------
+  def delete_issue(issue_key)
+    uri = URI.join(@base_url, "/rest/api/3/issue/#{issue_key}")
+
+    req = Net::HTTP::Delete.new(uri)
+    req["Accept"]        = "application/json"
+    req["Content-Type"]  = "application/json"
+    req.basic_auth(@email, @api_token)
+
+    res = perform(req)
+    res.code == "204" # Jira returns 204 No Content on successful deletion
   end
 
   private

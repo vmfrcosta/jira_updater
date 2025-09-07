@@ -93,12 +93,22 @@ class JiraSync
       start_date:  extract_date(fields, @start_field),
       end_date:    extract_date(fields, @end_field),
       labels:      fields["labels"] || [],
+      parent_key:  extract_parent_key(fields),
+      assignee:    extract_assignee(fields),
+      sprint:      extract_sprint(fields),
+      refinement_projected_date: extract_projected_date(fields, 'refinement_projected_date'),
+      deploy_projected_date: extract_due_date(fields),
+      br_us: extract_br_us(fields),
       raw:         issue
     }.merge(individual_fields)
 
     record = JiraIssue.find_or_initialize_by(key: key)
     record.assign_attributes(attrs)
     record.save!
+
+    # Calculate and update children count
+    children_count = JiraIssue.where(parent_key: key).count
+    record.update_column(:children_count, children_count) if record.children_count != children_count
 
     # Process changelog information
     process_changelog(record, issue)
@@ -176,6 +186,126 @@ class JiraSync
       end
     else
       value
+    end
+  end
+
+  def extract_parent_key(fields)
+    parent = fields["parent"]
+    return nil unless parent
+    
+    # Parent can be either a simple key string or a full object
+    case parent
+    when String
+      parent
+    when Hash
+      parent["key"]
+    else
+      nil
+    end
+  end
+
+  def extract_assignee(fields)
+    assignee = fields["assignee"]
+    return nil unless assignee
+    
+    # Assignee can be either a simple string or a full object
+    case assignee
+    when String
+      assignee
+    when Hash
+      # Prefer displayName, fallback to name, then accountId
+      assignee["displayName"] || assignee["name"] || assignee["accountId"]
+    else
+      nil
+    end
+  end
+
+  def extract_sprint(fields)
+    sprint_field = fields["sprint"]
+    return nil unless sprint_field
+    
+    # Sprint field can be an array of sprint objects
+    case sprint_field
+    when Array
+      # Get the most recent sprint (usually the last one in the array)
+      sprint = sprint_field.last
+      return nil unless sprint
+      
+      # Extract sprint name from the sprint object
+      case sprint
+      when Hash
+        sprint["name"] || sprint["displayName"]
+      when String
+        sprint
+      else
+        nil
+      end
+    when Hash
+      # Single sprint object
+      sprint_field["name"] || sprint_field["displayName"]
+    when String
+      # Direct sprint name
+      sprint_field
+    else
+      nil
+    end
+  end
+
+  def extract_projected_date(fields, field_name)
+    # Get the custom field ID from the mapping
+    cf_id = @cf_map[field_name]
+    return nil unless cf_id
+    
+    # Extract the date value from the custom field
+    date_value = fields[cf_id]
+    return nil unless date_value
+    
+    case date_value
+    when String
+      Date.parse(date_value) rescue nil
+    when Hash
+      # Handle date picker fields that might have a 'value' key
+      date_str = date_value["value"] || date_value["start"] || date_value["end"]
+      Date.parse(date_str) rescue nil if date_str
+    else
+      nil
+    end
+  end
+
+  def extract_due_date(fields)
+    # Extract the due date from the standard Jira due date field
+    due_date = fields["duedate"]
+    return nil unless due_date
+    
+    case due_date
+    when String
+      Date.parse(due_date) rescue nil
+    when Hash
+      # Handle date picker fields that might have a 'value' key
+      date_str = due_date["value"] || due_date["start"] || due_date["end"]
+      Date.parse(date_str) rescue nil if date_str
+    else
+      nil
+    end
+  end
+
+  def extract_br_us(fields)
+    # Extract the BR / US field from custom field customfield_10310
+    br_us_field = fields["customfield_10310"]
+    return nil unless br_us_field
+    
+    case br_us_field
+    when Array
+      # Multiple choice select list - join values with comma
+      br_us_field.map { |item| item["value"] || item }.join(" / ")
+    when Hash
+      # Single choice or object format
+      br_us_field["value"] || br_us_field["name"] || br_us_field.to_s
+    when String
+      # Direct string value
+      br_us_field
+    else
+      nil
     end
   end
 end
